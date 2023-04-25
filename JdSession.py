@@ -6,7 +6,8 @@ import pickle
 import random
 import time
 import requests
-
+import re
+from log import logger
 from lxml import etree
 
 DEFAULT_TIMEOUT = 10
@@ -31,7 +32,7 @@ class Session(object):
         self.itemDetails = dict()  # 商品信息：分类id、商家id
         self.username = 'jd'
         self.isLogin = False
-        self.password = None
+        self.paypassword = ''
         self.sess = requests.session()
         try:
             self.loadCookies()
@@ -100,7 +101,7 @@ class Session(object):
         resp = self.sess.get(url=url, headers=headers, params=payload)
 
         if not self.respStatus(resp):
-            return None
+            return ''
 
         return resp.content
 
@@ -148,15 +149,18 @@ class Session(object):
 
     ############## 商品方法 #############
     # 获取商品详情信息
-    def getItemDetail(self, skuId, skuNum=1, areaId=1):
+    def getItemDetail(self, skuId, skuNum=1, areaId='22_1930_50944_52191', venderId=10008806, cat='652,654,5012'):
         """ 查询商品详情
         :param skuId
         :return 商品信息（下单模式、库存）
         """
-        url = 'https://item-soa.jd.com/getWareBusiness'
+        #url = 'https://item-soa.jd.com/getWareBusiness'
+        url = 'https://c0.3.cn/stock'
         payload = {
             'skuId': skuId,
             'area': areaId,
+            'venderId':venderId,
+            'cat':cat,
             'num': skuNum
         }
         resp = requests.get(url=url, params=payload, headers=self.headers)
@@ -166,8 +170,9 @@ class Session(object):
         """ 解析商品信息
         :param skuId
         """
+        #print(self.getItemDetail(skuId).text)
         resp = self.getItemDetail(skuId).json()
-        shopId = resp['shopInfo']['shop']['shopId']
+        shopId = resp['stock']['self_D']['vid']
         detail = dict(venderId=shopId)
         if 'YuShouInfo' in resp:
             detail['yushouUrl'] = resp['YuShouInfo']['url']
@@ -176,16 +181,68 @@ class Session(object):
             detail['endTime'] = resp['miaoshaInfo']['endTime']
         self.itemDetails[skuId] = detail
 
+    def getItemDetailbyUrl(self, targetUrl):
+        """ 从页面响应解析商品信息
+        :param skuId
+        """
+        response = requests.get(targetUrl, headers=self.headers)
+        html_content = response.text
+        Urlconfig = dict()
+        #skuId
+        pattern = re.compile(r'skuid:\s*\d*')
+        match_results = pattern.findall(html_content)
+
+        for link in match_results:
+            pattern = re.compile(r'\d+')
+            skuIdresult = pattern.findall(link)
+            for skuIdstr in skuIdresult:
+                Urlconfig['skuId']=skuIdstr
+                print("skuIdstr:"+skuIdstr)
+        #cat
+        pattern = re.compile(r'cat:\s*\[\d*,\d*,\d*\]')
+        match_results = pattern.findall(html_content)
+
+        for link in match_results:
+            pattern = re.compile(r'\d*,\d*,\d*')
+            catresult = pattern.findall(link)
+            for catstr in catresult:
+                Urlconfig['cat']=catstr
+                print("catstr:"+catstr)
+        #venderId
+        pattern = re.compile(r'venderId:\s*\d*')
+        match_results = pattern.findall(html_content)
+
+        for link in match_results:
+            pattern = re.compile(r'\d+')
+            venderIdresult = pattern.findall(link)
+            for venderIdstr in venderIdresult:
+                Urlconfig['venderId']=venderIdstr
+                print("venderIdstr:"+venderIdstr)
+        return Urlconfig
+
     ############## 库存方法 #############
-    def getItemStock(self, skuId, skuNum, areaId):
+    def getItemStock(self, skuId, skuNum, areaId='22_1930_50944_52191', venderId=10008806, cat='652,654,5012'):
         """获取单个商品库存状态
         :param skuId: 商品id
         :param num: 商品数量
         :param areadId: 地区id
         :return: 商品是否有货 True/False
+        ps.可通过buy-num输入标签的data-max解析可买数量
+        <input class="text buy-num" onkeyup="setAmount.modify(&#39;#buy-num&#39;);" id="buy-num" value="1" data-max="200">
         """
-        resp = self.getItemDetail(skuId, skuNum, areaId).json()
-        return 'stockInfo' in resp and resp['stockInfo']['isStock']
+        try:
+            stock_info = json.loads(self.getItemDetail(skuId, skuNum, areaId, venderId, cat).text)
+            if stock_info["stock"]["StockStateName"] != "无货":
+                stock_count = stock_info["stock"]["StockState"]
+                print(f"商品有货，库存状态为:"+stock_info["stock"]["StockStateName"] )
+                return True
+            else:
+                print("商品无货")
+                return False
+        except Exception as e:
+            logger.error(e)
+            return
+            
 
     ############## 购物车相关 #############
 
@@ -359,7 +416,7 @@ class Session(object):
             if not self.respStatus(resp):
                 return
 
-            html = etree.HTML(resp.text)
+            html = etree.HTML(resp.text,None)
             self.eid = html.xpath("//input[@id='eid']/@value")
             self.fp = html.xpath("//input[@id='fp']/@value")
             self.risk_control = html.xpath("//input[@id='riskControl']/@value")
@@ -398,7 +455,7 @@ class Session(object):
             if not self.respStatus(resp):
                 return
 
-            html = etree.HTML(resp.text)
+            html = etree.HTML(resp.text,None)
             self.eid = html.xpath("//input[@id='eid']/@value")
             self.fp = html.xpath("//input[@id='fp']/@value")
             self.risk_control = html.xpath("//input[@id='riskControl']/@value")
@@ -442,7 +499,7 @@ class Session(object):
             data['submitOrderParam.payType4YuShou'] = 2
 
         # add payment password when necessary
-        paymentPwd = self.password
+        paymentPwd = self.paypassword
         if paymentPwd:
             data['submitOrderParam.payPassword'] = ''.join(
                 ['u3' + x for x in paymentPwd])
@@ -538,9 +595,14 @@ class Session(object):
 
 if __name__ == '__main__':
 
-    skuId = '100015253059'
-    areaId = '1_2901_55554_0'
+    skuId = '72032997817'
+    areaId = '22_1930_50944_52191'
     skuNum = 1
-
+    url="https://item.jd.com/10055931096628.html#crumb-wrap"
     session = Session()
-    print(session.getItemDetail(skuId, skuNum, areaId).text)
+    #print(session.getItemDetail(skuId, skuNum, areaId).text)
+    #session.fetchItemDetail(skuId)
+    #session.addCartSku(skuId, skuNum)
+    #session.uncheckCartAll()
+    #session.prepareCart(skuId, skuNum, areaId)
+    session.getItemDetailbyUrl(url)

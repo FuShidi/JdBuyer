@@ -16,12 +16,15 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QDateTimeEdit
 )
-
+from config import global_config
 from timer import Timer
 from JdSession import Session
+from utils import (
+    send_wechat,
+    get_random_useragent)
 
 NUM_LABEL_FORMAT = '商品购买数量[{0}]个'
-STOCK_LABEL_FORMAT = '库存查询间隔[{0}]秒'
+STOCK_LABEL_FORMAT = '库存查询间隔[{0}]毫秒'
 DATA_FORMAT = '%H:%M:%S'
 
 if getattr(sys, 'frozen', False):
@@ -52,6 +55,8 @@ class JdBuyerUI(QWidget):
             NUM_LABEL_FORMAT.format(self.config.get('count')))
         self.stockLabel.setText(STOCK_LABEL_FORMAT.format(
             self.config.get('stockInterval')))
+        self.venderEdit.setText(self.config.get('venderId'))
+        self.catEdit.setText(self.config.get('cat'))
 
     def saveData(self):
         with open(os.path.join(absPath, 'config.json'), 'w', encoding='utf-8') as f:
@@ -68,19 +73,19 @@ class JdBuyerUI(QWidget):
         # 商品SKU
         skuLabel = QLabel('商品SKU')
         self.skuEdit = QLineEdit()
-        grid.addWidget(skuLabel, 1, 0)
-        grid.addWidget(self.skuEdit, 1, 1)
+        grid.addWidget(skuLabel, 1, 1)
+        grid.addWidget(self.skuEdit, 1, 2)
 
         # 区域ID
         areaLabel = QLabel('地区ID')
         self.areaEdit = QLineEdit()
-        grid.addWidget(areaLabel, 2, 0)
-        grid.addWidget(self.areaEdit, 2, 1)
+        grid.addWidget(areaLabel, 2, 1)
+        grid.addWidget(self.areaEdit, 2, 2)
 
         # 购买数量
         self.numLabel = QLabel(NUM_LABEL_FORMAT.format(1))
         self.numSlider = QSlider(Qt.Orientation.Horizontal, self)
-        self.numSlider.setTickPosition(QSlider.TicksBelow)
+        self.numSlider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.numSlider.setMinimum(1)
         self.numSlider.setMaximum(9)
         self.numSlider.valueChanged.connect(self.valuechange)
@@ -90,9 +95,9 @@ class JdBuyerUI(QWidget):
         # 商品查询间隔
         self.stockLabel = QLabel(STOCK_LABEL_FORMAT.format(3))
         self.stockSlider = QSlider(Qt.Orientation.Horizontal, self)
-        self.stockSlider.setTickPosition(QSlider.TicksBelow)
-        self.stockSlider.setMinimum(1)
-        self.stockSlider.setMaximum(9)
+        self.stockSlider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.stockSlider.setMinimum(10)
+        self.stockSlider.setMaximum(10000)
         self.stockSlider.valueChanged.connect(self.stockValuechange)
         grid.addWidget(self.stockLabel, 2, 3)
         grid.addWidget(self.stockSlider, 2, 4)
@@ -100,11 +105,11 @@ class JdBuyerUI(QWidget):
         # 支付密码
         passwordLabel = QLabel('支付密码')
         self.passwordEdit = QLineEdit()
-        self.passwordEdit.setEchoMode(QLineEdit.Password)
+        self.passwordEdit.setEchoMode(QLineEdit.EchoMode.Password)
         self.passwordEdit.setPlaceholderText('使用虚拟资产时填写')
-        self.passwordEdit.textChanged[str].connect(self.textChanged)
-        grid.addWidget(passwordLabel, 3, 0)
-        grid.addWidget(self.passwordEdit, 3, 1)
+        self.passwordEdit.textChanged.connect(self.textChanged)
+        grid.addWidget(passwordLabel, 3, 1)
+        grid.addWidget(self.passwordEdit, 3, 2)
 
         # 开始时间
         buyTimeLabel = QLabel('定时开始执行时间')
@@ -113,18 +118,31 @@ class JdBuyerUI(QWidget):
         grid.addWidget(buyTimeLabel, 3, 3)
         grid.addWidget(self.buyTimeEdit, 3, 4)
 
-        # 二维码
-        self.qrLabel = QLabel()
-        grid.addWidget(self.qrLabel, 4, 0, 1, 2)
-        self.qrLabel.hide()
+        # 经销商ID
+        venderLabel = QLabel('经销商ID')
+        self.venderEdit = QLineEdit()
+        grid.addWidget(venderLabel, 4, 1)
+        grid.addWidget(self.venderEdit, 4, 2)
+
+        # 商品分类码
+        catLabel = QLabel('商品分类码')
+        self.catEdit = QLineEdit()
+        grid.addWidget(catLabel, 4, 3)
+        grid.addWidget(self.catEdit, 4, 4)
+
+        #商品链接
+        urlLabel = QLabel('商品链接')
+        self.urlEdit = QLineEdit()
+        grid.addWidget(urlLabel, 5, 1)
+        grid.addWidget(self.urlEdit, 5,2,1,3)
 
         # 控制按钮
         self.endButton = QPushButton("结束")
-        self.endButton.clicked[bool].connect(self.onClick)
+        self.endButton.clicked.connect(self.endClick)
         self.startButton = QPushButton("开始")
-        self.startButton.clicked[bool].connect(self.onClick)
-        grid.addWidget(self.endButton, 5, 0, 1, 2)
-        grid.addWidget(self.startButton, 5, 3, 1, 2)
+        self.startButton.clicked.connect(self.beginClick)
+        grid.addWidget(self.endButton, 7, 1, 1, 2)
+        grid.addWidget(self.startButton, 7, 3, 1, 2)
 
         self.endButton.setDisabled(True)
 
@@ -132,8 +150,14 @@ class JdBuyerUI(QWidget):
         self.infoLabel = QLabel()
         self.infoLabel.setText("当前登录状态是: {0}".format(
             '已登录' if self.session.isLogin else '未登录'))
-        grid.addWidget(self.infoLabel, 6, 0, 2, 4)
+        grid.addWidget(self.infoLabel, 8, 1, 2, 4)
 
+        # 二维码
+        self.qrLabel = QLabel()
+        grid.addWidget(self.qrLabel, 12, 1, 1, 2)
+        self.qrLabel.hide()
+
+        self.resize(650,250)
         self.setLayout(grid)
 
         # self.setGeometry(300, 300, 350, 300)
@@ -142,6 +166,13 @@ class JdBuyerUI(QWidget):
 
     # 开启下单任务
     def startTask(self):
+        #通过URL解析出需要的参数
+        if self.urlEdit.text():
+            urlconfig=self.session.getItemDetailbyUrl(self.urlEdit.text())
+            if urlconfig:
+                self.skuEdit.setText(urlconfig['skuId'])
+                self.venderEdit.setText(urlconfig['venderId'])
+                self.catEdit.setText(urlconfig['cat'])
         if not self.session.isLogin:
             self.qrLogin()
             self.infoLabel.setText('请使用京东扫码登录')
@@ -149,18 +180,24 @@ class JdBuyerUI(QWidget):
         self.config['buyTime'] = self.buyTimeEdit.text()
         self.config['skuId'] = self.skuEdit.text()
         self.config['areaId'] = self.areaEdit.text()
+        self.config['venderId'] = self.venderEdit.text()
+        self.config['cat'] = self.catEdit.text()
         self.saveData()
         self.buyerThread = BuyerThread(self.session, self.config)
         self.buyerThread.infoSignal.connect(self.infoSignal)
-        self.buyerThread.start()
+        #self.buyerThread.start()
+        self.buyerThread.run()
 
     # 扫码登录
     def qrLogin(self):
         res = self.session.getQRcode()
-        img = QImage.fromData(res)
-        self.qrLabel.setPixmap(QPixmap.fromImage(img))
-        self.qrLabel.show()
-        self.ticketThread.start()
+        if res:
+            img = QImage.fromData(res)
+            self.qrLabel.setPixmap(QPixmap.fromImage(img))
+            self.qrLabel.show()
+            self.ticketThread.start()
+        else:
+            self.infoLabel.setText("二维码获取失败")
 
     # 异步线程信号
     def ticketSignal(self, sec):
@@ -175,15 +212,15 @@ class JdBuyerUI(QWidget):
     def infoSignal(self, sec):
         self.qrLabel.hide()
         self.infoLabel.setText(sec)
+        #self.infoLabel.setText('{0} 测试显示..'.format(time.strftime(DATA_FORMAT, time.localtime())))
 
     # 按钮监听
-    def onClick(self, pressed):
-        source = self.sender()
-        if source.text() == '开始':
-            self.startTask()
-            self.disableStartBtn()
-        if source.text() == '结束':
-            self.handleStopBrn()
+    def beginClick(self):
+        self.startTask()
+        self.disableStartBtn()
+
+    def endClick(self):
+        self.handleStopBrn()
 
     def handleStopBrn(self):
         if self.session.isLogin:
@@ -204,7 +241,7 @@ class JdBuyerUI(QWidget):
     def textChanged(self, text):
         password = self.passwordEdit.text()
         self.config['password'] = password
-        self.session.password = password
+        self.session.paypassword = password
 
     # 滑块监控
     def valuechange(self):
@@ -270,6 +307,10 @@ class BuyerThread(QThread):
         self.session = session
         self.taskParam = taskParam
         self._isPause = False
+        self.random_useragent = global_config.getboolean('config', 'random_useragent')
+        # 微信推送
+        self.enableWx = global_config.getboolean('messenger', 'enable')
+        self.scKey = global_config.get('messenger', 'sckey')
 
     def pause(self):
         self._isPause = True
@@ -278,10 +319,12 @@ class BuyerThread(QThread):
         sku_id = self.taskParam.get('skuId')
         area_id = self.taskParam.get('areaId')
         count = self.taskParam.get('count')
-        stock_interval = self.taskParam.get('stockInterval')
+        stock_interval = self.taskParam.get('stockInterval')/1000
         buyTime = self.taskParam.get('buyTime')
+        venderId = self.taskParam.get('venderId')
+        cat = self.taskParam.get('cat')
 
-        self.session.fetchItemDetail(sku_id)
+        #self.session.fetchItemDetail(sku_id)
         submitRetry = 3
         submitInterval = 5
 
@@ -290,15 +333,22 @@ class BuyerThread(QThread):
         timer.start()
 
         while True:
+            print('{0} 商品监控线程正在执行..'.format(time.strftime(DATA_FORMAT, time.localtime())))
             if self._isPause:
+                print('{0} 已取消下单..'.format(time.strftime(DATA_FORMAT, time.localtime())))
                 self.infoSignal.emit('{0} 已取消下单'.format(
                     time.strftime(DATA_FORMAT, time.localtime())))
                 return
             try:
-                if not self.session.getItemStock(skuId=sku_id, num=1, areaId=area_id):
+                if self.random_useragent:
+                    self.session.userAgent = get_random_useragent()
+                    self.session.headers = {'User-Agent': self.session.userAgent}
+                if not self.session.getItemStock(sku_id, count, area_id, venderId, cat):
+                    #print('{0} 不满足下单条件..'.format(time.strftime(DATA_FORMAT, time.localtime())))
                     self.infoSignal.emit('{0} 不满足下单条件，{1}s后进行下一次查询'.format(
                         time.strftime(DATA_FORMAT, time.localtime()), stock_interval))
                 else:
+                    #print('{0} 满足下单条件..'.format(time.strftime(DATA_FORMAT, time.localtime())))
                     self.infoSignal.emit('{0} 满足下单条件，开始执行'.format(sku_id))
                     if not self.session.prepareCart(sku_id, count, area_id):
                         self.infoSignal.emit('{0} 加入购物车失败，{1}s后进行下一次查询'.format(
@@ -306,6 +356,8 @@ class BuyerThread(QThread):
                     else:
                         if self.session.submitOrderWitchTry(submitRetry, submitInterval):
                             self.infoSignal.emit('下单成功')
+                            if self.enableWx:
+                                send_wechat(message='JdBuyerApp:您的商品已下单成功，请及时支付订单', desp='您的商品已下单成功，请及时支付订单', sckey=self.scKey)
                             return
             except Exception as e:
                 self.infoSignal.emit(e)

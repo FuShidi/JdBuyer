@@ -6,7 +6,7 @@ import os
 import random
 import re
 from base64 import b64encode
-
+import fake_useragent
 import requests
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
@@ -23,7 +23,7 @@ q+CA6agNkqly2H4j6wIDAQAB
 DEFAULT_TIMEOUT = 10
 
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.181 Safari/537.36'
-
+userAgent=fake_useragent.UserAgent()
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.1 Safari/537.36",
@@ -215,4 +215,5 @@ def get_random_useragent():
     """生成随机的UserAgent
     :return: UserAgent字符串
     """
-    return random.choice(USER_AGENTS)
+    #return random.choice(USER_AGENTS)
+    return userAgent.chrome

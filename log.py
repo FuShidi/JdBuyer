@@ -5,10 +5,9 @@ import logging.handlers
 import os
 from time import strftime
 
-LOG_FILENAME = strftime("logs\jd-buyer_%Y_%m_%d_%H.log")
+LOG_FILENAME = strftime("jd-buyer_%Y_%m_%d_%H.log")
 
 logger = logging.getLogger()
-
 
 def set_logger():
     path = os.path.dirname(os.getcwd()+ '\\logs\\') # 判断日志目录
@@ -19,11 +18,13 @@ def set_logger():
 
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.INFO)
     logger.addHandler(console_handler)
 
     file_handler = logging.handlers.RotatingFileHandler(
         LOG_FILENAME, maxBytes=10485760, backupCount=5, encoding="utf-8")
     file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.ERROR)
     logger.addHandler(file_handler)
 
 
