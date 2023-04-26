@@ -234,14 +234,14 @@ class Session(object):
             stock_info = json.loads(self.getItemDetail(skuId, skuNum, areaId, venderId, cat).text)
             if stock_info["stock"]["StockStateName"] != "无货":
                 stock_count = stock_info["stock"]["StockState"]
-                print(f"商品有货，库存状态为:"+stock_info["stock"]["StockStateName"] )
+                print("商品有货，库存状态为:"+stock_info["stock"]["StockStateName"])
                 return True
             else:
                 print("商品无货")
                 return False
         except Exception as e:
             logger.error(e)
-            return
+            raise e
             
 
     ############## 购物车相关 #############

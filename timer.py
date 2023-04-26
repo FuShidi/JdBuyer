@@ -5,7 +5,7 @@ from datetime import datetime
 
 class Timer(object):
 
-    def __init__(self, buyTime, sleepInterval=0.01):
+    def __init__(self, buyTime, sleepInterval=0.005):
 
         # '2018-09-28 22:45:50'
         self.buy_time = datetime.strptime(buyTime, "%Y-%m-%d %H:%M:%S")

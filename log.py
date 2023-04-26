@@ -22,7 +22,7 @@ def set_logger():
     logger.addHandler(console_handler)
 
     file_handler = logging.handlers.RotatingFileHandler(
-        LOG_FILENAME, maxBytes=10485760, backupCount=5, encoding="utf-8")
+        path+'\\'+LOG_FILENAME, maxBytes=10485760, backupCount=5, encoding="utf-8")
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.ERROR)
     logger.addHandler(file_handler)

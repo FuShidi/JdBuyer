@@ -22,6 +22,7 @@ from JdSession import Session
 from utils import (
     send_wechat,
     get_random_useragent)
+from log import logger
 
 NUM_LABEL_FORMAT = '商品购买数量[{0}]个'
 STOCK_LABEL_FORMAT = '库存查询间隔[{0}]毫秒'
@@ -157,12 +158,12 @@ class JdBuyerUI(QWidget):
         grid.addWidget(self.qrLabel, 12, 1, 1, 2)
         self.qrLabel.hide()
 
-        self.resize(650,250)
         self.setLayout(grid)
 
         # self.setGeometry(300, 300, 350, 300)
-        self.setWindowTitle('京东小猪手')
+        self.setWindowTitle('小东猪手')
         self.show()
+        self.resize(650,250)
 
     # 开启下单任务
     def startTask(self):
@@ -185,8 +186,8 @@ class JdBuyerUI(QWidget):
         self.saveData()
         self.buyerThread = BuyerThread(self.session, self.config)
         self.buyerThread.infoSignal.connect(self.infoSignal)
-        #self.buyerThread.start()
-        self.buyerThread.run()
+        self.buyerThread.start()
+        #self.buyerThread.run()
 
     # 扫码登录
     def qrLogin(self):
@@ -196,6 +197,7 @@ class JdBuyerUI(QWidget):
             self.qrLabel.setPixmap(QPixmap.fromImage(img))
             self.qrLabel.show()
             self.ticketThread.start()
+            #self.ticketThread.run()
         else:
             self.infoLabel.setText("二维码获取失败")
 
@@ -212,12 +214,18 @@ class JdBuyerUI(QWidget):
     def infoSignal(self, sec):
         self.qrLabel.hide()
         self.infoLabel.setText(sec)
+        if sec == '登录失效':
+            self.qrLogin()
+            self.infoLabel.setText('请使用京东扫码登录')
+        if sec == '异常终止':
+            self.infoLabel.setText('异常终止,详见日志')
+            self.resumeSatrtBtn()
         #self.infoLabel.setText('{0} 测试显示..'.format(time.strftime(DATA_FORMAT, time.localtime())))
 
     # 按钮监听
     def beginClick(self):
-        self.startTask()
         self.disableStartBtn()
+        self.startTask()
 
     def endClick(self):
         self.handleStopBrn()
@@ -294,6 +302,14 @@ class TicketThread(QThread):
         self.ticketSignal.emit('成功')
         self.session.isLogin = True
         self.session.saveCookies()
+        #登陆状态保活,每5分钟重新加载Cookie访问订单页
+        while True:
+            time.sleep(300)
+            try:
+                self.session.loadCookies()
+            except Exception:
+                self.ticketSignal.emit('二维码过期，请重新获取扫描')
+                return
 
 # 商品监控线程
 
@@ -323,7 +339,7 @@ class BuyerThread(QThread):
         buyTime = self.taskParam.get('buyTime')
         venderId = self.taskParam.get('venderId')
         cat = self.taskParam.get('cat')
-
+        checkinterval = 0
         #self.session.fetchItemDetail(sku_id)
         submitRetry = 3
         submitInterval = 5
@@ -334,6 +350,10 @@ class BuyerThread(QThread):
 
         while True:
             print('{0} 商品监控线程正在执行..'.format(time.strftime(DATA_FORMAT, time.localtime())))
+            if not self.session.isLogin:
+                print('{0} 已取消下单..'.format(time.strftime(DATA_FORMAT, time.localtime())))
+                self.infoSignal.emit('登录失效')
+                return
             if self._isPause:
                 print('{0} 已取消下单..'.format(time.strftime(DATA_FORMAT, time.localtime())))
                 self.infoSignal.emit('{0} 已取消下单'.format(
@@ -360,7 +380,10 @@ class BuyerThread(QThread):
                                 send_wechat(message='JdBuyerApp:您的商品已下单成功，请及时支付订单', desp='您的商品已下单成功，请及时支付订单', sckey=self.scKey)
                             return
             except Exception as e:
-                self.infoSignal.emit(e)
+                logger.error(e)
+                self.infoSignal.emit('异常终止')
+                return
+
             time.sleep(stock_interval)
 
 
